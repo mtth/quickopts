@@ -1,6 +1,6 @@
 # `quickopts`
 
-A small opinionated Python library for parsing script options.
+A tiny opinionated Python library for parsing script options.
 
 ## Quickstart
 
