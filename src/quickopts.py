@@ -1,16 +1,18 @@
-"""Small option parser for README-style script docstrings."""
+"""Tiny option parser for README-style script docstrings."""
 
 from __future__ import annotations
 
 import dataclasses
 import enum
+from pathlib import Path
 import re
+import string
 import sys
 from collections.abc import Mapping, Sequence
 from typing import Self
 
 
-__all__ = ["ParseError", "Parsed", "parse"]
+__all__ = ["ParseError", "Parsed", "parse", "parse_or_exit"]
 
 
 class ParseError(Exception):
@@ -98,25 +100,33 @@ class _Parser:
                 continue
 
             if parsing_options and token.startswith("-") and token != "-":
-                if len(token) != 2:
-                    raise ParseError(f"unknown option {token}")
+                token_index = 1
+                while token_index < len(token):
+                    name = token[token_index]
+                    kind = self.options.get(name)
+                    if kind is None:
+                        raise ParseError(f"unknown option -{name}")
 
-                name = token[1]
-                kind = self.options.get(name)
-                if kind is None:
-                    raise ParseError(f"unknown option -{name}")
+                    if kind is _Option.COMMAND:
+                        if command is not None:
+                            raise ParseError(
+                                f"multiple commands: -{command} and -{name}"
+                            )
+                        command = name
+                    elif kind is _Option.SWITCH:
+                        switches.add(name)
+                    elif kind is _Option.FLAG:
+                        value = token[token_index + 1 :]
+                        if value:
+                            flags[name] = value
+                        else:
+                            index += 1
+                            if index >= len(argv):
+                                raise ParseError(f"missing value for -{name}")
+                            flags[name] = argv[index]
+                        break
 
-                if kind is _Option.COMMAND:
-                    if command is not None:
-                        raise ParseError(f"multiple commands: -{command} and -{name}")
-                    command = name
-                elif kind is _Option.SWITCH:
-                    switches.add(name)
-                elif kind is _Option.FLAG:
-                    index += 1
-                    if index >= len(argv):
-                        raise ParseError(f"missing value for -{name}")
-                    flags[name] = argv[index]
+                    token_index += 1
 
                 index += 1
                 continue
@@ -132,7 +142,7 @@ class _Parser:
         )
 
 
-def parse(doc: str, argv: Sequence[str] | None = None) -> Parsed:
+def parse(doc: str, args: Sequence[str]) -> Parsed:
     """Parse command-line arguments according to ``doc``.
 
     ``doc`` is scanned line by line. Section headers are lines such as
@@ -143,14 +153,55 @@ def parse(doc: str, argv: Sequence[str] | None = None) -> Parsed:
     the option name and the 2+ whitespace gap before the description; otherwise
     it is a switch.
 
-    ``argv`` is parsed as command-line tokens without the program name. Commands
-    set ``Parsed.command`` and only one may appear. Flags consume the following
-    token as their value, switches are collected in ``Parsed.switches``, and
-    non-option tokens are collected in ``Parsed.args``. ``--`` stops option
-    parsing and sends the remaining tokens to ``Parsed.args``. When ``argv`` is
-    omitted, ``sys.argv[1:]`` is parsed.
+    ``args`` is parsed as command-line tokens without the program name. Commands
+    set ``Parsed.command`` and only one may appear. Switches are collected in
+    ``Parsed.switches``. Single-dash option tokens may contain clusters such as
+    ``-abc``. When a flag appears in a cluster, it consumes the rest of that
+    token as its value; if no characters remain, it consumes the following arg.
+    Non-option tokens are collected in ``Parsed.args``. ``--`` stops option
+    parsing and sends the remaining tokens to ``Parsed.args``.
     """
 
-    if argv is None:
-        argv = sys.argv[1:]
-    return _Parser.from_doc(doc).parse(argv)
+    return _Parser.from_doc(doc).parse(args)
+
+
+def parse_or_exit(
+    doc: str,
+    *,
+    help_command: str | None = "h",
+    program_var: str | None = None,
+    _argv: Sequence[str] | None = None,
+    _exit = sys.exit,
+) -> Parsed:
+    """Parse command-line arguments or exit with code 2.
+
+    This is a convenience wrapper around ``parse`` for scripts. It reads
+    ``sys.argv`` as a full command-line vector, uses ``argv[0]``'s basename as
+    the display program name, and parses the remaining tokens as args.
+
+    If parsing raises ``ParseError``, the error message is prefixed with the
+    program name, printed to standard error, and the process exits with status
+    code 2.
+
+    If ``help_command`` is not ``None`` and the parsed command matches it, the
+    docstring is printed to standard output and the process exits with status
+    code 0. When ``program_var`` is set, its value in the docstring is replaced
+    with the display program name before printing.
+
+    ``_argv`` and ``_exit`` are internal hooks for tests.
+    """
+    argv = sys.argv if _argv is None else _argv
+    arg0, *args = argv
+    prog = Path(arg0).name
+    try:
+        q = parse(doc, args)
+    except ParseError as err:
+        print(f"{prog}: {err}", file=sys.stderr)
+        _exit(2)
+    else:
+        if help_command and q.command == help_command:
+            subs = {program_var: prog} if program_var else {}
+            print(string.Template(doc).substitute(**subs) if subs else doc)
+            _exit(0)
+        else:
+            return q

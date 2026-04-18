@@ -1,3 +1,5 @@
+import contextlib
+import io
 import pathlib
 import sys
 import unittest
@@ -85,6 +87,12 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(("-z", "arg"), parsed.args)
         self.assertEqual(frozenset(), parsed.switches)
 
+    def test_clustered_options_after_double_dash_are_positional(self):
+        parsed = quickopts.parse(DOC, ["--", "-Cz"])
+
+        self.assertIsNone(parsed.command)
+        self.assertEqual(("-Cz",), parsed.args)
+
     def test_single_dash_is_positional_arg(self):
         parsed = quickopts.parse(DOC, ["-"])
 
@@ -98,13 +106,52 @@ class ParseTest(unittest.TestCase):
         with self.assertRaisesRegex(quickopts.ParseError, "unknown option -x"):
             quickopts.parse(DOC, ["-x"])
 
-    def test_grouped_option_raises(self):
-        with self.assertRaisesRegex(quickopts.ParseError, "unknown option -zb"):
-            quickopts.parse(DOC, ["-zb"])
+    def test_clustered_command_and_switch(self):
+        parsed = quickopts.parse(DOC, ["-Cz"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual(frozenset({"z"}), parsed.switches)
+
+    def test_clustered_command_and_flag_with_next_token_value(self):
+        parsed = quickopts.parse(DOC, ["-Cb", "main"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual({"b": "main"}, parsed.flags)
+
+    def test_clustered_command_switch_and_flag_with_attached_value(self):
+        parsed = quickopts.parse(DOC, ["-Czbmain"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual(frozenset({"z"}), parsed.switches)
+        self.assertEqual({"b": "main"}, parsed.flags)
+
+    def test_flag_consumes_rest_of_cluster_as_value(self):
+        doc = """
+Commands:
+  -C  Create.
+Options:
+  -a VALUE  Value.
+  -b        Switch.
+  -c        Switch.
+"""
+
+        parsed = quickopts.parse(doc, ["-Cabc"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual({"a": "bc"}, parsed.flags)
+        self.assertEqual(frozenset(), parsed.switches)
+
+    def test_unknown_option_inside_cluster_raises(self):
+        with self.assertRaisesRegex(quickopts.ParseError, "unknown option -x"):
+            quickopts.parse(DOC, ["-Czx"])
 
     def test_multiple_commands_raise(self):
         with self.assertRaisesRegex(quickopts.ParseError, "multiple commands"):
             quickopts.parse(DOC, ["-C", "-D"])
+
+    def test_multiple_commands_inside_cluster_raise(self):
+        with self.assertRaisesRegex(quickopts.ParseError, "multiple commands"):
+            quickopts.parse(DOC, ["-CD"])
 
     def test_doc_parser_ignores_extra_prose_and_blank_lines(self):
         doc = """
@@ -179,6 +226,32 @@ Options:
 
         with self.assertRaisesRegex(ValueError, "conflicting definitions"):
             quickopts.parse(doc, [])
+
+    def test_parse_or_exit_returns_parsed_args(self):
+        parsed = quickopts.parse_or_exit(DOC, _argv=["tool", "-C", "-b", "main"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual({"b": "main"}, parsed.flags)
+
+    def test_parse_or_exit_prints_error_and_exits_with_code_2(self):
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as raised:
+                quickopts.parse_or_exit(DOC, _argv=["tool", "-x"])
+
+        self.assertEqual(2, raised.exception.code)
+        self.assertEqual("tool: unknown option -x\n", stderr.getvalue())
+
+    def test_parse_or_exit_prints_help_and_exits_with_code_0(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as raised:
+                quickopts.parse_or_exit(DOC, program_var="prog", _argv=["tool", "-h"])
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("tool [-L]", stdout.getvalue())
 
 
 if __name__ == "__main__":
