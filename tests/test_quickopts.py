@@ -37,7 +37,7 @@ class ParseTest(unittest.TestCase):
 
         self.assertEqual("C", parsed.command)
         self.assertEqual({"b": "main"}, parsed.flags)
-        self.assertEqual(frozenset({"z"}), parsed.switches)
+        self.assertEqual({"z": 1}, parsed.switches)
         self.assertEqual((), parsed.args)
 
     def test_parse_delete_command_with_positional_arg(self):
@@ -51,7 +51,7 @@ class ParseTest(unittest.TestCase):
 
         self.assertEqual("L", parsed.command)
         self.assertEqual({}, parsed.flags)
-        self.assertEqual(frozenset(), parsed.switches)
+        self.assertEqual({}, parsed.switches)
         self.assertEqual((), parsed.args)
 
     def test_parse_help_command(self):
@@ -76,16 +76,22 @@ class ParseTest(unittest.TestCase):
 
         self.assertEqual({"b": "new"}, parsed.flags)
 
-    def test_repeated_switches_are_deduplicated(self):
+    def test_repeated_switches_are_counted(self):
         parsed = quickopts.parse(DOC, ["-z", "-z"])
 
-        self.assertEqual(frozenset({"z"}), parsed.switches)
+        self.assertEqual({"z": 2}, parsed.switches)
+
+    def test_switch_mapping_supports_key_membership(self):
+        parsed = quickopts.parse(DOC, ["-z"])
+
+        self.assertIn("z", parsed.switches)
+        self.assertNotIn("x", parsed.switches)
 
     def test_positional_dash_after_double_dash(self):
         parsed = quickopts.parse(DOC, ["--", "-z", "arg"])
 
         self.assertEqual(("-z", "arg"), parsed.args)
-        self.assertEqual(frozenset(), parsed.switches)
+        self.assertEqual({}, parsed.switches)
 
     def test_clustered_options_after_double_dash_are_positional(self):
         parsed = quickopts.parse(DOC, ["--", "-Cz"])
@@ -97,6 +103,13 @@ class ParseTest(unittest.TestCase):
         parsed = quickopts.parse(DOC, ["-"])
 
         self.assertEqual(("-",), parsed.args)
+
+    def test_first_positional_arg_stops_option_parsing(self):
+        parsed = quickopts.parse(DOC, ["pos", "-z", "-b", "main"])
+
+        self.assertEqual({}, parsed.switches)
+        self.assertEqual({}, parsed.flags)
+        self.assertEqual(("pos", "-z", "-b", "main"), parsed.args)
 
     def test_missing_flag_value_raises(self):
         with self.assertRaisesRegex(quickopts.ParseError, "missing value for -b"):
@@ -110,7 +123,18 @@ class ParseTest(unittest.TestCase):
         parsed = quickopts.parse(DOC, ["-Cz"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual(frozenset({"z"}), parsed.switches)
+        self.assertEqual({"z": 1}, parsed.switches)
+
+    def test_clustered_repeated_switches_are_counted(self):
+        parsed = quickopts.parse(DOC, ["-zz"])
+
+        self.assertEqual({"z": 2}, parsed.switches)
+
+    def test_clustered_command_and_repeated_switches_are_counted(self):
+        parsed = quickopts.parse(DOC, ["-Czz"])
+
+        self.assertEqual("C", parsed.command)
+        self.assertEqual({"z": 2}, parsed.switches)
 
     def test_clustered_command_and_flag_with_next_token_value(self):
         parsed = quickopts.parse(DOC, ["-Cb", "main"])
@@ -122,7 +146,7 @@ class ParseTest(unittest.TestCase):
         parsed = quickopts.parse(DOC, ["-Czbmain"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual(frozenset({"z"}), parsed.switches)
+        self.assertEqual({"z": 1}, parsed.switches)
         self.assertEqual({"b": "main"}, parsed.flags)
 
     def test_flag_consumes_rest_of_cluster_as_value(self):
@@ -139,7 +163,7 @@ Options:
 
         self.assertEqual("C", parsed.command)
         self.assertEqual({"a": "bc"}, parsed.flags)
-        self.assertEqual(frozenset(), parsed.switches)
+        self.assertEqual({}, parsed.switches)
 
     def test_unknown_option_inside_cluster_raises(self):
         with self.assertRaisesRegex(quickopts.ParseError, "unknown option -x"):
@@ -172,7 +196,7 @@ More prose:
 
         self.assertEqual("A", parsed.command)
         self.assertEqual({"n": "Ada"}, parsed.flags)
-        self.assertEqual(frozenset({"v"}), parsed.switches)
+        self.assertEqual({"v": 1}, parsed.switches)
         self.assertEqual(("arg",), parsed.args)
 
     def test_option_value_placeholder_can_use_arbitrary_non_space_characters(self):
@@ -189,7 +213,7 @@ Options:
         )
 
         self.assertEqual({"p": "/tmp/out.txt", "m": "slow"}, parsed.flags)
-        self.assertEqual(frozenset({"q"}), parsed.switches)
+        self.assertEqual({"q": 1}, parsed.switches)
 
     def test_option_value_is_detected_before_description_gap(self):
         doc = """
@@ -201,7 +225,7 @@ Options:
         parsed = quickopts.parse(doc, ["-a", "one", "-b"])
 
         self.assertEqual({"a": "one"}, parsed.flags)
-        self.assertEqual(frozenset({"b"}), parsed.switches)
+        self.assertEqual({"b": 1}, parsed.switches)
 
     def test_blank_line_resets_current_section(self):
         doc = """Options:
