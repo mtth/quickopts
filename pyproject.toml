@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quickopts"
 version = "0.1.0"
-description = "A small opinionated Python library for parsing script options."
+description = "A tiny opinionated Python library for parsing script options."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
