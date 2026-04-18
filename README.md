@@ -31,7 +31,11 @@ import sys
 
 
 if __name__ == "__main__":
-    q = quickopts.parse(__doc__)
+    try:
+        q = quickopts.parse(__doc__)
+    except quickopts.ParseError as err:
+        print(err, file=sys.stderr)
+        sys.exit(2)
     match q.command or "L":
         case "C":
             _create(branch=q.flags["b"], sleep="z" in q.switches)
@@ -39,7 +43,7 @@ if __name__ == "__main__":
             _delete(q.args[0])
         case "L": ...
         case "W": ...
-        case "h": print(string.Template(__doc__).format(prog=sys.argv[0]))
+        case "h": print(string.Template(__doc__).substitute(prog=sys.argv[0]))
 ```
 
 ## Implementation
@@ -47,17 +51,20 @@ if __name__ == "__main__":
 ```python
 # Public API
 
+class ParseError(Exception): ...
+
 @dataclasses.dataclass
 class Parsed(slots=True):
     command: str | None
     flags: Mapping[str, str]
     switches: frozenset[str]
+    args: tuple[str, ...]
 
-def parse(doc: str, argv=sys.argv) -> Parsed: ...
+def parse(doc: str, argv: Sequence[str] | None = None) -> Parsed: ...
 
 # Internals
 
-class _Option(enum):
+class _Option(enum.Enum):
     COMMAND = enum.auto()
     FLAG = enum.auto()
     SWITCH = enum.auto()
@@ -65,4 +72,17 @@ class _Option(enum):
 class _Parser:
     options: Mapping[str, _Option]
     def parse(self, argv) -> Parsed: ...
+```
+
+The first version parses option definitions from the `Commands:` and `Options:`
+sections. In `Options:`, an entry has a value when non-whitespace characters
+appear between the option name and the 2+ whitespace gap before the description.
+`Synopsis:` is descriptive and is not validated.
+
+Folder structure:
+
+```
+src/quickopts.py
+tests/test_quickopts.py
+pyproject.toml
 ```
