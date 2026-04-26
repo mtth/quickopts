@@ -12,15 +12,24 @@ from collections.abc import Mapping, Sequence
 from typing import Self
 
 
-__all__ = ["ParseError", "Parsed", "parse", "parse_or_exit"]
+__all__ = ["ParseError", "Parsed", "Placeholder", "parse", "parse_or_exit"]
 
 
 class ParseError(Exception):
     """Raised when command-line arguments cannot be parsed."""
 
 
+class Placeholder(enum.Enum):
+    """Built-in template values resolved by ``parse_or_exit``."""
+
+    PROGRAM = enum.auto()
+    """The display program name derived from ``argv[0]``."""
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Parsed:
+    """Command, option, and positional arguments parsed from a command line."""
+
     command: str | None
     flags: Mapping[str, str]
     switches: Mapping[str, int]
@@ -170,6 +179,7 @@ def parse_or_exit(
     doc: str,
     *,
     help_command: str | None = "h",
+    template_mapping: Mapping[str, str | Placeholder] | None = None,
     program_var: str | None = None,
     _argv: Sequence[str] | None = None,
     _exit = sys.exit,
@@ -186,14 +196,16 @@ def parse_or_exit(
 
     If ``help_command`` is not ``None`` and the parsed command matches it, the
     docstring is printed to standard output and the process exits with status
-    code 0. When ``program_var`` is set, its value in the docstring is replaced
-    with the display program name before printing.
+    code 0. ``template_mapping`` is passed to ``string.Template.substitute``
+    before printing, after replacing ``Placeholder`` values with their runtime
+    values. ``program_var`` is a legacy shortcut for mapping a template variable
+    to ``Placeholder.PROGRAM``.
 
     ``_argv`` and ``_exit`` are internal hooks for tests.
     """
     argv = sys.argv if _argv is None else _argv
     arg0, *args = argv
-    prog = Path(arg0).name
+    prog = _display_program(arg0) if _argv is None else Path(arg0).name
     try:
         q = parse(doc, args)
     except ParseError as err:
@@ -201,8 +213,35 @@ def parse_or_exit(
         _exit(2)
     else:
         if help_command and q.command == help_command:
-            subs = {program_var: prog} if program_var else {}
-            print(string.Template(doc).substitute(**subs) if subs else doc)
+            mapping = dict(template_mapping or {})
+            if program_var is not None:
+                mapping.setdefault(program_var, Placeholder.PROGRAM)
+            if mapping or template_mapping is not None:
+
+                def render(v: Placeholder | str) -> str:
+                    match v:
+                        case str():
+                            return v
+                        case Placeholder.PROGRAM:
+                            return prog
+                        case _:
+                            raise ValueError(f"unknown placeholder: {v}")
+
+                rendered = {k: render(v) for k, v in mapping.items()}
+                help_msg = string.Template(doc).substitute(rendered)
+            else:
+                help_msg = doc
+            print(help_msg)
             _exit(0)
         else:
             return q
+
+
+def _display_program(arg0: str) -> str:
+    orig_argv = getattr(sys, "orig_argv", ())
+    try:
+        module_flag = orig_argv.index("-m")
+        module = orig_argv[module_flag + 1]
+    except (ValueError, IndexError):
+        return Path(arg0).name
+    return f"{Path(orig_argv[0]).name} -m {module}"

@@ -3,6 +3,7 @@ import io
 import pathlib
 import sys
 import unittest
+import unittest.mock
 
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
@@ -276,6 +277,115 @@ Options:
 
         self.assertEqual(0, raised.exception.code)
         self.assertIn("tool [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_template_mapping_supports_program_placeholder(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as raised:
+                quickopts.parse_or_exit(
+                    DOC,
+                    template_mapping={"prog": quickopts.Placeholder.PROGRAM},
+                    _argv=["tool", "-h"],
+                )
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("tool [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_template_program_uses_module_invocation(self):
+        stdout = io.StringIO()
+
+        with unittest.mock.patch.object(sys, "argv", ["/path/foo/bar.py", "-h"]):
+            with unittest.mock.patch.object(
+                sys,
+                "orig_argv",
+                ["python", "-m", "foo.bar", "-h"],
+                create=True,
+            ):
+                with contextlib.redirect_stdout(stdout):
+                    with self.assertRaises(SystemExit) as raised:
+                        quickopts.parse_or_exit(
+                            DOC,
+                            template_mapping={"prog": quickopts.Placeholder.PROGRAM},
+                        )
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("python -m foo.bar [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_template_program_uses_package_module_invocation(self):
+        stdout = io.StringIO()
+
+        with unittest.mock.patch.object(sys, "argv", ["/path/foo/__main__.py", "-h"]):
+            with unittest.mock.patch.object(
+                sys,
+                "orig_argv",
+                ["python", "-m", "foo", "-h"],
+                create=True,
+            ):
+                with contextlib.redirect_stdout(stdout):
+                    with self.assertRaises(SystemExit) as raised:
+                        quickopts.parse_or_exit(
+                            DOC,
+                            template_mapping={"prog": quickopts.Placeholder.PROGRAM},
+                        )
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("python -m foo [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_error_uses_module_invocation(self):
+        stderr = io.StringIO()
+
+        with unittest.mock.patch.object(sys, "argv", ["/path/foo/bar.py", "-x"]):
+            with unittest.mock.patch.object(
+                sys,
+                "orig_argv",
+                ["python", "-m", "foo.bar", "-x"],
+                create=True,
+            ):
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:
+                        quickopts.parse_or_exit(DOC)
+
+        self.assertEqual(2, raised.exception.code)
+        self.assertEqual("python -m foo.bar: unknown option -x\n", stderr.getvalue())
+
+    def test_parse_or_exit_template_mapping_supports_literal_strings(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as raised:
+                quickopts.parse_or_exit(
+                    DOC,
+                    template_mapping={"prog": "custom-tool"},
+                    _argv=["tool", "-h"],
+                )
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("custom-tool [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_template_mapping_takes_precedence_over_program_var(self):
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as raised:
+                quickopts.parse_or_exit(
+                    DOC,
+                    template_mapping={"prog": "custom-tool"},
+                    program_var="prog",
+                    _argv=["tool", "-h"],
+                )
+
+        self.assertEqual(0, raised.exception.code)
+        self.assertIn("custom-tool [-L]", stdout.getvalue())
+        self.assertNotIn("  tool [-L]", stdout.getvalue())
+
+    def test_parse_or_exit_template_mapping_uses_strict_substitution(self):
+        with self.assertRaises(KeyError):
+            quickopts.parse_or_exit(
+                "$missing\n\nCommands:\n  -h  Show help.\n",
+                template_mapping={},
+                _argv=["tool", "-h"],
+            )
 
 
 if __name__ == "__main__":

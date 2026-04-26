@@ -56,7 +56,10 @@ import quickopts
 
 
 if __name__ == "__main__":
-    q = quickopts.parse_or_exit(__doc__, program_var="prog")
+    q = quickopts.parse_or_exit(
+        __doc__,
+        template_mapping={"prog": quickopts.Placeholder.PROGRAM},
+    )
     match q.command or "L":
         case "C": _create(branch=q.flags["b"], sleep="z" in q.switches)
         case "D": _delete(q.args[0])
@@ -114,8 +117,12 @@ When a value flag appears inside a cluster, it consumes the rest of that token a
 its value. If no characters remain, it consumes the following arg. Repeated value
 flags use the last value. Repeated switches are counted.
 
-`parse_or_exit(doc, program_var="prog")` reads `sys.argv`, prints parse errors to
-stderr with exit code `2`, and handles `-h` by printing the docstring and exiting
-with code `0`.
+`parse_or_exit(doc, template_mapping={"prog": quickopts.Placeholder.PROGRAM})`
+reads `sys.argv`, prints parse errors to stderr with exit code `2`, and handles
+`-h` by printing the docstring and exiting with code `0`. Template mappings use
+`string.Template` substitution, and values may be literal strings or built-in
+placeholders such as `quickopts.Placeholder.PROGRAM`, which resolves to the
+display program name, including `python -m module` when invoked with `-m`. The
+older `program_var="prog"` shortcut is still supported for compatibility.
 
 [PEP 723]: https://peps.python.org/pep-0723/
