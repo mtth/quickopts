@@ -31,7 +31,7 @@ class Parsed:
     """Command, option, and positional arguments parsed from a command line."""
 
     command: str | None
-    flags: Mapping[str, str]
+    flags: Mapping[str, tuple[str, ...]]
     switches: Mapping[str, int]
     args: tuple[str, ...]
 
@@ -94,7 +94,7 @@ class _Parser:
 
     def parse(self, argv: Sequence[str]) -> Parsed:
         command: str | None = None
-        flags: dict[str, str] = {}
+        flags: dict[str, list[str]] = {}
         switches: dict[str, int] = {}
         args: list[str] = []
         parsing_options = True
@@ -127,12 +127,12 @@ class _Parser:
                     elif kind is _Option.FLAG:
                         value = token[token_index + 1 :]
                         if value:
-                            flags[name] = value
+                            flags.setdefault(name, []).append(value)
                         else:
                             index += 1
                             if index >= len(argv):
                                 raise ParseError(f"missing value for -{name}")
-                            flags[name] = argv[index]
+                            flags.setdefault(name, []).append(argv[index])
                         break
 
                     token_index += 1
@@ -145,7 +145,7 @@ class _Parser:
 
         return Parsed(
             command=command,
-            flags=flags,
+            flags={name: tuple(values) for name, values in flags.items()},
             switches=switches,
             args=tuple(args),
         )
@@ -164,12 +164,13 @@ def parse(doc: str, args: Sequence[str]) -> Parsed:
 
     ``args`` is parsed as command-line tokens without the program name. Commands
     set ``Parsed.command`` and only one may appear. Switch repeat counts are
-    collected in ``Parsed.switches``. Single-dash option tokens may contain
-    clusters such as ``-abc``. When a flag appears in a cluster, it consumes the
-    rest of that token as its value; if no characters remain, it consumes the
-    following arg. The first non-option token stops option parsing, and that
-    token plus all remaining tokens are collected in ``Parsed.args``. ``--``
-    also stops option parsing and sends the remaining tokens to ``Parsed.args``.
+    collected in ``Parsed.switches``. Flag values are collected in
+    ``Parsed.flags`` tuples. Single-dash option tokens may contain clusters such
+    as ``-abc``. When a flag appears in a cluster, it consumes the rest of that
+    token as its value; if no characters remain, it consumes the following arg.
+    The first non-option token stops option parsing, and that token plus all
+    remaining tokens are collected in ``Parsed.args``. ``--`` also stops option
+    parsing and sends the remaining tokens to ``Parsed.args``.
     """
 
     return _Parser.from_doc(doc).parse(args)

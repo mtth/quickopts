@@ -37,7 +37,7 @@ class ParseTest(unittest.TestCase):
         parsed = quickopts.parse(DOC, ["-C", "-z", "-b", "main"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual({"b": "main"}, parsed.flags)
+        self.assertEqual({"b": ("main",)}, parsed.flags)
         self.assertEqual({"z": 1}, parsed.switches)
         self.assertEqual((), parsed.args)
 
@@ -72,10 +72,15 @@ class ParseTest(unittest.TestCase):
         self.assertIsNone(parsed.command)
         self.assertEqual((), parsed.args)
 
-    def test_repeated_flags_use_last_value(self):
+    def test_repeated_flags_collect_values_in_order(self):
         parsed = quickopts.parse(DOC, ["-b", "old", "-b", "new"])
 
-        self.assertEqual({"b": "new"}, parsed.flags)
+        self.assertEqual({"b": ("old", "new")}, parsed.flags)
+
+    def test_repeated_attached_flags_collect_values_in_order(self):
+        parsed = quickopts.parse(DOC, ["-bold", "-bnew"])
+
+        self.assertEqual({"b": ("old", "new")}, parsed.flags)
 
     def test_repeated_switches_are_counted(self):
         parsed = quickopts.parse(DOC, ["-z", "-z"])
@@ -141,14 +146,14 @@ class ParseTest(unittest.TestCase):
         parsed = quickopts.parse(DOC, ["-Cb", "main"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual({"b": "main"}, parsed.flags)
+        self.assertEqual({"b": ("main",)}, parsed.flags)
 
     def test_clustered_command_switch_and_flag_with_attached_value(self):
         parsed = quickopts.parse(DOC, ["-Czbmain"])
 
         self.assertEqual("C", parsed.command)
         self.assertEqual({"z": 1}, parsed.switches)
-        self.assertEqual({"b": "main"}, parsed.flags)
+        self.assertEqual({"b": ("main",)}, parsed.flags)
 
     def test_flag_consumes_rest_of_cluster_as_value(self):
         doc = """
@@ -163,7 +168,7 @@ Options:
         parsed = quickopts.parse(doc, ["-Cabc"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual({"a": "bc"}, parsed.flags)
+        self.assertEqual({"a": ("bc",)}, parsed.flags)
         self.assertEqual({}, parsed.switches)
 
     def test_unknown_option_inside_cluster_raises(self):
@@ -196,7 +201,7 @@ More prose:
         parsed = quickopts.parse(doc, ["-A", "-v", "-n", "Ada", "arg"])
 
         self.assertEqual("A", parsed.command)
-        self.assertEqual({"n": "Ada"}, parsed.flags)
+        self.assertEqual({"n": ("Ada",)}, parsed.flags)
         self.assertEqual({"v": 1}, parsed.switches)
         self.assertEqual(("arg",), parsed.args)
 
@@ -213,7 +218,7 @@ Options:
             ["-p", "/tmp/out.txt", "-m", "slow", "-q"],
         )
 
-        self.assertEqual({"p": "/tmp/out.txt", "m": "slow"}, parsed.flags)
+        self.assertEqual({"p": ("/tmp/out.txt",), "m": ("slow",)}, parsed.flags)
         self.assertEqual({"q": 1}, parsed.switches)
 
     def test_option_value_is_detected_before_description_gap(self):
@@ -225,7 +230,7 @@ Options:
 
         parsed = quickopts.parse(doc, ["-a", "one", "-b"])
 
-        self.assertEqual({"a": "one"}, parsed.flags)
+        self.assertEqual({"a": ("one",)}, parsed.flags)
         self.assertEqual({"b": 1}, parsed.switches)
 
     def test_blank_line_resets_current_section(self):
@@ -237,7 +242,7 @@ Options:
 
         parsed = quickopts.parse(doc, ["-a", "one"])
 
-        self.assertEqual({"a": "one"}, parsed.flags)
+        self.assertEqual({"a": ("one",)}, parsed.flags)
 
         with self.assertRaisesRegex(quickopts.ParseError, "unknown option -b"):
             quickopts.parse(doc, ["-b"])
@@ -256,7 +261,7 @@ Options:
         parsed = quickopts.parse_or_exit(DOC, _argv=["tool", "-C", "-b", "main"])
 
         self.assertEqual("C", parsed.command)
-        self.assertEqual({"b": "main"}, parsed.flags)
+        self.assertEqual({"b": ("main",)}, parsed.flags)
 
     def test_parse_or_exit_prints_error_and_exits_with_code_2(self):
         stderr = io.StringIO()
