@@ -61,7 +61,7 @@ if __name__ == "__main__":
         template_mapping={"prog": quickopts.Placeholder.PROGRAM},
     )
     match q.command or "L":
-        case "C": _create(branch=q.flags["b"][-1], sleep="z" in q.switches)
+        case "C": _create(branch=q.flags.get("b", "main"), sleep="z" in q.switches)
         case "D": _delete(q.args[0])
         case "L": ...
         case "W": ...
@@ -98,7 +98,8 @@ Options:
 object with the following attributes:
 
 - `command`: the selected command, or `None`;
-- `flags`: value flags, for example `{"b": ("main",)}`;
+- `flags`: value flags, for example `{"b": "main"}`; repeated values are
+  available through `q.flags.getall("b")`;
 - `switches`: switch repeat counts, for example `{"z": 2}`; use
   `"z" in q.switches` to check presence;
 - `args`: remaining positional arguments.
@@ -115,7 +116,8 @@ Single-dash options use POSIX `getopts`-style clustering:
 
 When a value flag appears inside a cluster, it consumes the rest of that token as
 its value. If no characters remain, it consumes the following arg. Repeated value
-flags collect all values in order. Repeated switches are counted.
+flags collect all values in order and scalar access returns the last value.
+Repeated switches are counted.
 
 `parse_or_exit(doc, template_mapping={"prog": quickopts.Placeholder.PROGRAM})`
 reads `sys.argv`, prints parse errors to stderr with exit code `2`, and handles

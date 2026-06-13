@@ -8,11 +8,11 @@ from pathlib import Path
 import re
 import string
 import sys
-from collections.abc import Mapping, Sequence
-from typing import Self
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Self, overload
 
 
-__all__ = ["ParseError", "Parsed", "Placeholder", "parse", "parse_or_exit"]
+__all__ = ["Flags", "ParseError", "Parsed", "Placeholder", "parse", "parse_or_exit"]
 
 
 class ParseError(Exception):
@@ -26,12 +26,58 @@ class Placeholder(enum.Enum):
     """The display program name derived from ``argv[0]``."""
 
 
+class Flags(Mapping[str, str]):
+    """Parsed value flags.
+
+    Mapping access returns the last value for each flag. Use ``getall`` to
+    inspect every repeated value in parse order.
+    """
+
+    def __init__(self, values: Mapping[str, Sequence[str]] | None = None) -> None:
+        self._values = {
+            name: tuple(flag_values) for name, flag_values in (values or {}).items()
+        }
+
+    def __getitem__(self, key: str) -> str:
+        return self._values[key][-1]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    @overload
+    def get(self, key: str, default: None = None) -> str | None: ...
+
+    @overload
+    def get(self, key: str, default: str) -> str: ...
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        values = self._values.get(key)
+        if values is None:
+            return default
+        return values[-1]
+
+    def getall(self, key: str) -> tuple[str, ...]:
+        """Return all values in parse order, or an empty tuple if absent."""
+        return self._values.get(key, ())
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({dict(self)!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Mapping):
+            return dict(self) == dict(other)
+        return NotImplemented
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Parsed:
     """Command, option, and positional arguments parsed from a command line."""
 
     command: str | None
-    flags: Mapping[str, tuple[str, ...]]
+    flags: Flags
     switches: Mapping[str, int]
     args: tuple[str, ...]
 
@@ -145,7 +191,7 @@ class _Parser:
 
         return Parsed(
             command=command,
-            flags={name: tuple(values) for name, values in flags.items()},
+            flags=Flags(flags),
             switches=switches,
             args=tuple(args),
         )
@@ -164,13 +210,14 @@ def parse(doc: str, args: Sequence[str]) -> Parsed:
 
     ``args`` is parsed as command-line tokens without the program name. Commands
     set ``Parsed.command`` and only one may appear. Switch repeat counts are
-    collected in ``Parsed.switches``. Flag values are collected in
-    ``Parsed.flags`` tuples. Single-dash option tokens may contain clusters such
-    as ``-abc``. When a flag appears in a cluster, it consumes the rest of that
-    token as its value; if no characters remain, it consumes the following arg.
-    The first non-option token stops option parsing, and that token plus all
-    remaining tokens are collected in ``Parsed.args``. ``--`` also stops option
-    parsing and sends the remaining tokens to ``Parsed.args``.
+    collected in ``Parsed.switches``. Scalar flag access returns the last value;
+    all repeated flag values are available through ``Parsed.flags.getall``.
+    Single-dash option tokens may contain clusters such as ``-abc``. When a flag
+    appears in a cluster, it consumes the rest of that token as its value; if no
+    characters remain, it consumes the following arg. The first non-option token
+    stops option parsing, and that token plus all remaining tokens are collected
+    in ``Parsed.args``. ``--`` also stops option parsing and sends the remaining
+    tokens to ``Parsed.args``.
     """
 
     return _Parser.from_doc(doc).parse(args)
