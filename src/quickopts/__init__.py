@@ -9,7 +9,7 @@ import re
 import string
 import sys
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Self, overload
+from typing import Callable, NoReturn, Self, cast
 
 
 __all__ = ["Flags", "ParseError", "Parsed", "Placeholder", "parse", "parse_or_exit"]
@@ -46,18 +46,6 @@ class Flags(Mapping[str, str]):
 
     def __len__(self) -> int:
         return len(self._values)
-
-    @overload
-    def get(self, key: str, default: None = None) -> str | None: ...
-
-    @overload
-    def get(self, key: str, default: str) -> str: ...
-
-    def get(self, key: str, default: str | None = None) -> str | None:
-        values = self._values.get(key)
-        if values is None:
-            return default
-        return values[-1]
 
     def getall(self, key: str) -> tuple[str, ...]:
         """Return all values in parse order, or an empty tuple if absent."""
@@ -230,7 +218,7 @@ def parse_or_exit(
     template_mapping: Mapping[str, str | Placeholder] | None = None,
     program_var: str | None = None,
     _argv: Sequence[str] | None = None,
-    _exit = sys.exit,
+    _exit: Callable[[int], NoReturn] = sys.exit,
 ) -> Parsed:
     """Parse command-line arguments or exit with code 2.
 
@@ -286,7 +274,7 @@ def parse_or_exit(
 
 
 def _display_program(arg0: str) -> str:
-    orig_argv = getattr(sys, "orig_argv", ())
+    orig_argv = cast(Sequence[str], getattr(sys, "orig_argv", ()))
     try:
         module_flag = orig_argv.index("-m")
         module = orig_argv[module_flag + 1]

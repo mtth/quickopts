@@ -1,5 +1,7 @@
 [tools]
+node = "24"
 python = "3.12"
+"npm:pyright" = "latest"
 
 [settings]
 experimental = true
